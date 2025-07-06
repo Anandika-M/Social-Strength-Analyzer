@@ -286,7 +286,7 @@ entry_users = Entry(root, width=50)
 entry_users.grid(row=0, column=1, padx=10, pady=10)
 
 
-label_edges = Label(root, text="Enter friendships (User1-User2; comma separated):")
+label_edges = Label(root, text="Enter friendships (User1-User2; semi-colon separated):")
 label_edges.grid(row=1, column=0, padx=10, pady=10)
 entry_edges = Entry(root, width=50)
 entry_edges.grid(row=1, column=1, padx=10, pady=10)
