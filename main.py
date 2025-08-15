@@ -1,315 +1,159 @@
+import streamlit as st
+import networkx as nx
+import matplotlib.pyplot as plt
 import random
 import copy
-import tkinter as tk
-from tkinter import simpledialog, messagebox, Toplevel, Label, Entry, Button
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.pyplot as plt
-import numpy as np
+import time
 
-def add_edge(edges, u, v):
-    edges.append([u, v])
-
+# Karger’s Algorithm
 def find(parent, i):
     if parent[i] == i:
         return i
     return find(parent, parent[i])
 
 def union(parent, rank, x, y):
-    xroot = find(parent, x)
-    yroot = find(parent, y)
-
-    if rank[xroot] < rank[yroot]:
-        parent[xroot] = yroot
-    elif rank[xroot] > rank[yroot]:
-        parent[yroot] = xroot
+    xr, yr = find(parent, x), find(parent, y)
+    if rank[xr] < rank[yr]:
+        parent[xr] = yr
+    elif rank[xr] > rank[yr]:
+        parent[yr] = xr
     else:
-        parent[yroot] = xroot
-        rank[xroot] += 1
+        parent[yr] = xr
+        rank[xr] += 1
 
-def karger_min_cut(vertices, edges):
-    edges_copy = copy.deepcopy(edges)
-    parent = []
-    rank = []
-    
-    for node in range(vertices):
-        parent.append(node)
-        rank.append(0)
+def karger_min_cut(n, edges):
+    e = copy.deepcopy(edges)
+    parent = list(range(n))
+    rank = [0] * n
+    verts = n
+    while verts > 2:
+        u, v = random.choice(e)
+        s1, s2 = find(parent, u), find(parent, v)
+        if s1 != s2:
+            verts -= 1
+            union(parent, rank, s1, s2)
+        e.remove((u, v))
+    cut = [(u, v) for (u, v) in edges if find(parent, u) != find(parent, v)]
+    return cut
 
-    remaining_vertices = vertices
-    
-    while remaining_vertices > 2:
-        i = random.randrange(len(edges_copy))
-        u, v = edges_copy[i]
+# Stoer–Wagner Algorithm
+def stoer_wagner_min_cut(G):
+    val, part = nx.stoer_wagner(G)
+    cut = [(u, v) for u in part[0] for v in part[1] if G.has_edge(u, v)]
+    return val, cut
 
-        set1 = find(parent, u)
-        set2 = find(parent, v)
+# Suggestions for strengthening network
+def suggest_connections(G):
+    suggestions = []
+    for node in G.nodes():
+        for other in G.nodes():
+            if node != other and not G.has_edge(node, other):
+                common = len(set(G.neighbors(node)) & set(G.neighbors(other)))
+                if common >= 2:  # adjustable
+                    suggestions.append((node, other, common))
+    suggestions.sort(key=lambda x: -x[2])
+    return suggestions
 
-        if set1 != set2:
-            remaining_vertices -= 1
-            union(parent, rank, set1, set2)
+# Plot Graph
+def plot_graph(G, cut_edges, title):
+    pos = nx.spring_layout(G, seed=42)
+    plt.figure(figsize=(6, 4))
+    nx.draw(G, pos, with_labels=True, node_color="skyblue", node_size=800)
+    nx.draw_networkx_edges(G, pos, edgelist=cut_edges, edge_color="red", width=2)
+    plt.title(title)
+    st.pyplot(plt)
 
-        edges_copy.pop(i)  
+st.title("Social Strength Analyzer: Karger vs Stoer–Wagner")
 
-    cut_edges = []
-    for u, v in edges:
-        if find(parent, u) != find(parent, v):
-            cut_edges.append([u, v])
+# Inputs
+users_input = st.sidebar.text_input("Users (comma separated)",
+    "Alice, Bob, Charlie, David, Eve, Frank, Grace, Helen, Ian, Julia")
+edges_input = st.sidebar.text_area("Edges (U1-U2 per line)", """Alice-Bob
+Alice-Charlie
+Alice-David
+Bob-Charlie
+Bob-Eve
+Charlie-David
+Charlie-Frank
+David-Eve
+Eve-Frank
+Eve-Grace
+Frank-Grace
+Grace-Helen
+Helen-Ian
+Ian-Julia
+Julia-Alice
+Julia-Frank
+David-Helen
+Bob-Helen
+Charlie-Ian""")
+iterations = st.sidebar.slider("Karger Trials", 50, 1000, 200)
 
-    return cut_edges
+# Parse
+names = [u.strip() for u in users_input.split(",") if u.strip()]
+idx = {name: i for i, name in enumerate(names)}
+edges = []
+for line in edges_input.splitlines():
+    if "-" in line:
+        u, v = line.strip().split("-")
+        if u in idx and v in idx:
+            edges.append((idx[u], idx[v]))
 
-def suggest_new_connections(user_names, edges, min_cut_edges):
-    connections = {i: set() for i in range(len(user_names))}
-    
-    for u, v in edges:
-        connections[u].add(v)
-        connections[v].add(u)
-    
-    recommendations = {}    
-    for u, v in min_cut_edges:
-        u_suggestions = set()
-        v_suggestions = set()
-        
-        for friend in connections[u]:
-            for potential in connections[friend]:
-                if potential != u and potential != v and potential not in connections[u]:
-                    u_suggestions.add(potential)
-        
-        # Suggest friends for v
-        for friend in connections[v]:
-            for potential in connections[friend]:
-                if potential != v and potential != u and potential not in connections[v]:
-                    v_suggestions.add(potential)
+# Graph
+G = nx.Graph()
+G.add_nodes_from(names)
+for u, v in edges:
+    G.add_edge(names[u], names[v])
 
-        recommendations[user_names[u]] = [user_names[p] for p in u_suggestions]
-        recommendations[user_names[v]] = [user_names[p] for p in v_suggestions]
+# Karger
+start_k = time.time()
+best_cut, min_size = None, float("inf")
+for _ in range(iterations):
+    cut = karger_min_cut(len(names), edges)
+    if len(cut) < min_size:
+        min_size, best_cut = len(cut), cut
+end_k = time.time()
+best_cut_named = [(names[u], names[v]) for u, v in best_cut]
 
-    return recommendations
+# Stoer–Wagner
+start_s = time.time()
+sw_val, sw_cut = stoer_wagner_min_cut(G)
+end_s = time.time()
 
+# Show graphs
+st.subheader("Karger Result")
+plot_graph(G, best_cut_named, f"Size: {min_size}")
 
-def plot_full_graph(user_names, edges, cut_edges=None):
-    plt.clf()  
-    fig, ax = plt.subplots(figsize=(8, 6))
+st.subheader("Stoer–Wagner Result")
+plot_graph(G, sw_cut, f"Size: {sw_val}")
 
-    n = len(user_names)
-    angle_step = 360 / n
-    positions = {}
+# Suggestions
+st.subheader("Suggested Connections to Strengthen Network")
+st.caption("Numbers in parentheses show how many mutual friends the two people share.")
 
-    for i, user in enumerate(user_names):
-        angle = i * angle_step
-        x = 10 * (1 + 0.9 * np.cos(np.radians(angle)))
-        y = 10 * (1 + 0.9 * np.sin(np.radians(angle)))
-        positions[user] = (x, y)
-        ax.text(x, y, user, fontsize=12, ha='center')
+suggestions = suggest_connections(G)
 
-    for u, v in edges:
-        u_name = user_names[u]
-        v_name = user_names[v]
-        x_values = [positions[u_name][0], positions[v_name][0]]
-        y_values = [positions[u_name][1], positions[v_name][1]]
-        if cut_edges and ([u, v] in cut_edges or [v, u] in cut_edges):
-            ax.plot(x_values, y_values, 'red', linestyle='-', lw=4)  
-        else:
-            ax.plot(x_values, y_values, 'gray', linestyle='-', lw=2) 
+# Group by person
+suggestion_dict = {person: [] for person in G.nodes()}
+for u, v, common in suggestions:
+    suggestion_dict[u].append(f"{v} ({common})")
 
-    ax.set_title("Social Network with Minimum Cut Highlighted")
-    ax.axis('off')
-    return fig
-
-def display_plot_window(user_names, edges, min_cut_edges):
-    new_window = Toplevel(root)
-    new_window.title("Network Plot")
-
-    fig = plot_full_graph(user_names, edges, cut_edges=min_cut_edges)
-    canvas = FigureCanvasTkAgg(fig, master=new_window)
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-    canvas.draw()
-
-def run_algorithm():
-    user_names = entry_users.get().split(",")
-    friendships = entry_edges.get().split(";")
-
-    if not user_names or not friendships:
-        messagebox.showerror("Input Error", "Please enter users and friendships.")
-        return
-
-    user_names = [name.strip() for name in user_names]
-    edges = []
-
-    for friendship in friendships:
-        try:
-            u_name, v_name = friendship.split("-")
-            u_name, v_name = u_name.strip(), v_name.strip()
-            if u_name in user_names and v_name in user_names:
-                u = user_names.index(u_name)
-                v = user_names.index(v_name)
-                add_edge(edges, u, v)
-            else:
-                messagebox.showerror("Input Error", f"User {u_name} or {v_name} not found in users list.")
-                return
-        except ValueError:
-            messagebox.showerror("Input Error", f"Friendship {friendship} is not in the correct format.")
-            return
-
-    min_cut_edges = None
-    min_cut_size = float('inf')
-
-    for _ in range(200): 
-        cut_edges = karger_min_cut(len(user_names), edges)
-        if len(cut_edges) < min_cut_size:
-            min_cut_size = len(cut_edges)
-            min_cut_edges = cut_edges
-
-    result = "\nWeakest connections in the network (minimum cut):\n"
-    for u, v in min_cut_edges:
-        result += f"{user_names[u]} - {user_names[v]}\n"
-    
-    result += f"\nSize of the minimum cut (weak connections): {min_cut_size}"
-
-    suggestions = suggest_new_connections(user_names, edges, min_cut_edges)
-
-    result += "\n\nSuggestions to strengthen weak connections:\n"
-    for person, suggestions_list in suggestions.items():
-        if suggestions_list:
-            result += f"{person} can connect with: {', '.join(suggestions_list)}\n"
-        else:
-            result += f"{person} has no new suggestions.\n"
-
-    result_label.config(text=result)
-
-    display_plot_window(user_names, edges, min_cut_edges)
-
-
-def open_input_window(action, input_type):
-    input_window = Toplevel(root)
-    input_window.title(action)
-
-    label = Label(input_window, text=f"Enter {input_type}:")
-    label.grid(row=0, column=0, padx=10, pady=10)
-    entry = Entry(input_window)
-    entry.grid(row=0, column=1, padx=10, pady=10)
-
-    if input_type == "person":
-        Button(input_window, text="Submit", command=lambda: process_person(action, entry.get(), input_window)).grid(row=1, columnspan=2, pady=10)
+# Display per person
+for person, suggestion_list in suggestion_dict.items():
+    if suggestion_list:
+        st.write(f"{person} can connect with: {', '.join(suggestion_list)}")
     else:
-        Button(input_window, text="Submit", command=lambda: process_friendship(action, entry.get(), input_window)).grid(row=1, columnspan=2, pady=10)
+        st.write(f"{person} has no new suggestions.")
 
-
-def process_person(action, name, window):
-    user_names = entry_users.get().split(",")
-    user_names = [name.strip() for name in user_names]
-
-    if action == "Add Person":
-        if name in user_names:
-            messagebox.showerror("Error", "Person already exists.")
-        else:
-            user_names.append(name)
-            entry_users.delete(0, tk.END)
-            entry_users.insert(0, ", ".join(user_names))
-            messagebox.showinfo("Success", f"{name} added successfully.")
-
-    elif action == "Remove Person":
-        if name not in user_names:
-            messagebox.showerror("Error", "Person not found.")
-        else:
-            remove_friendships(name, user_names)
-
-            user_names.remove(name)
-            entry_users.delete(0, tk.END)
-            entry_users.insert(0, ", ".join(user_names))
-            messagebox.showinfo("Success", f"{name} removed successfully.")
-
-    window.destroy()
-    
-
-def remove_friendships(person, user_names):
-    edges = entry_edges.get().split(";")
-    edges = [edge.strip() for edge in edges]
-    updated_edges = []
-
-    for friendship in edges:
-        u_name, v_name = friendship.split("-")
-        if u_name.strip() != person and v_name.strip() != person:
-            updated_edges.append(friendship)
-
-    entry_edges.delete(0, tk.END)
-    entry_edges.insert(0, "; ".join(updated_edges))
-
-
-
-
-def process_friendship(action, friendship, window):
-    try:
-        u_name, v_name = friendship.split("-")
-        u_name, v_name = u_name.strip(), v_name.strip()
-    except ValueError:
-        messagebox.showerror("Input Error", "Friendship must be in format User1-User2.")
-        return
-
-    user_names = entry_users.get().split(",")
-    user_names = [name.strip() for name in user_names]
-
-    if u_name not in user_names or v_name not in user_names:
-        messagebox.showerror("Error", "One or both users not found.")
-        return
-
-    edges = entry_edges.get().split(";")
-    edges = [edge.strip() for edge in edges]
-
-    if action == "Add Friendship":
-        if f"{u_name}-{v_name}" in edges or f"{v_name}-{u_name}" in edges:
-            messagebox.showerror("Error", "Friendship already exists.")
-        else:
-            edges.append(f"{u_name}-{v_name}")
-            entry_edges.delete(0, tk.END)
-            entry_edges.insert(0, "; ".join(edges))
-            messagebox.showinfo("Success", f"Friendship between {u_name} and {v_name} added.")
-    
-    elif action == "Remove Friendship":
-        if f"{u_name}-{v_name}" not in edges and f"{v_name}-{u_name}" not in edges:
-            messagebox.showerror("Error", "Friendship not found.")
-        else:
-            edges.remove(f"{u_name}-{v_name}")
-            entry_edges.delete(0, tk.END)
-            entry_edges.insert(0, "; ".join(edges))
-            messagebox.showinfo("Success", f"Friendship between {u_name} and {v_name} removed.")
-
-    window.destroy()
-
-
-root = tk.Tk()
-root.title("Social Network Min Cut Algorithm")
-
-
-label_users = Label(root, text="Enter users (comma separated):")
-label_users.grid(row=0, column=0, padx=10, pady=10)
-entry_users = Entry(root, width=50)
-entry_users.grid(row=0, column=1, padx=10, pady=10)
-
-
-label_edges = Label(root, text="Enter friendships (User1-User2; semi-colon separated):")
-label_edges.grid(row=1, column=0, padx=10, pady=10)
-entry_edges = Entry(root, width=50)
-entry_edges.grid(row=1, column=1, padx=10, pady=10)
-
-button_run = Button(root, text="Find Minimum Cut", command=run_algorithm)
-button_run.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
-
-result_label = Label(root, text="")
-result_label.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
-
-
-button_add_person = Button(root, text="Add Person", command=lambda: open_input_window("Add Person", "person"))
-button_add_person.grid(row=4, column=0, padx=10, pady=10)
-
-button_remove_person = Button(root, text="Remove Person", command=lambda: open_input_window("Remove Person", "person"))
-button_remove_person.grid(row=4, column=1, padx=10, pady=10)
-
-button_add_friendship = Button(root, text="Add Friendship", command=lambda: open_input_window("Add Friendship", "friendship"))
-button_add_friendship.grid(row=5, column=0, padx=10, pady=10)
-
-button_remove_friendship = Button(root, text="Remove Friendship", command=lambda: open_input_window("Remove Friendship", "friendship"))
-button_remove_friendship.grid(row=5, column=1, padx=10, pady=10)
-
-root.mainloop()
-
-
+# Comparison
+st.subheader("Comparison Table")
+comparison_data = {
+    "Algorithm": ["Karger", "Stoer–Wagner"],
+    "Cut Size": [min_size, sw_val],
+    "Cut Edges": [
+        ", ".join(f"{u}–{v}" for u, v in best_cut_named),
+        ", ".join(f"{u}–{v}" for u, v in sw_cut)
+    ],
+    "Time (s)": [round(end_k - start_k, 4), round(end_s - start_s, 4)]
+}
+st.table(comparison_data)
