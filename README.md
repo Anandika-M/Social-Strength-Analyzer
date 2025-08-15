@@ -12,6 +12,7 @@ This Streamlit app analyzes a social network to:
      Python 3.8+
  ## Dependecies :
       Install the required packages with : 
+      
       ```bash
       pip install streamlit networkx matplotlib pandas
       ```
