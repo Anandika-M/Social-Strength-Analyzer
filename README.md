@@ -8,16 +8,14 @@ This Streamlit app analyzes a social network to:
 - Compare both algorithms’ results side-by-side
   
 # Requirements 
- ## Python version : 
-     ```
+ ## Python version :
      Python 3.8+
-     ```
+
  ## Dependecies :
       Install the required packages with : 
       
-      ```bash
       pip install streamlit networkx matplotlib pandas
-      ```
+      
 Required Libraries
 1. streamlit – for interactive dashboard
 2. networkx – for graph creation and algorithms
