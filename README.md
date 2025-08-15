@@ -30,8 +30,8 @@ Required Libraries
 streamlit run app.py
 ```
   ## Input format 
-  Users: Comma-separated list
-  Connections: Semicolon-separated list of User1-User2 pairs
+  -Users: Comma-separated list
+  -Connections: Semicolon-separated list of User1-User2 pairs
   ## Output 
 The output displays the weakest links in red and it also suggests potential connections based on mutual connections to make the graph connections stronger. It also provides a comparison table to evaluate the performance of both algorithms.
 
